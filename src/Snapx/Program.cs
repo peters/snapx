@@ -33,6 +33,7 @@ namespace snapx
         static readonly ILog SnapLogger = LogProvider.GetLogger("Snapx");
         static readonly ILog SnapPackLogger = LogProvider.GetLogger("Snapx.Pack");
         static readonly ILog SnapPromoteLogger = LogProvider.GetLogger("Snapx.Promote");
+        static readonly ILog SnapDemoteLogger = LogProvider.GetLogger("Snapx.Demote");
         static readonly ILog SnapRestoreLogger = LogProvider.GetLogger("Snapx.Restore");
         static readonly ILog SnapListLogger = LogProvider.GetLogger("Snapx.List");
         static readonly ILog SnapLockLogger = LogProvider.GetLogger("Snapx.Lock");
@@ -142,6 +143,7 @@ namespace snapx
 
             var nugetServiceCommandPack = new NugetService(snapOs.Filesystem, new NugetLogger(SnapPackLogger));
             var nugetServiceCommandPromote = new NugetService(snapOs.Filesystem, new NugetLogger(SnapPromoteLogger));
+            var nugetServiceCommandDemote = new NugetService(snapOs.Filesystem, new NugetLogger(SnapDemoteLogger));
             var nugetServiceCommandRestore = new NugetService(snapOs.Filesystem, new NugetLogger(SnapRestoreLogger));
             var nugetServiceNoopLogger = new NugetService(snapOs.Filesystem, new NugetLogger(new LogProvider.NoOpLogger()));
 
@@ -162,7 +164,7 @@ namespace snapx
             return MainAsync(args, coreRunLib, snapOs, snapExtractor, snapOs.Filesystem, 
                 snapSpecsReader, snapCryptoProvider,
                 snapPack, snapAppWriter, snapXEmbeddedResources, snapPackageRestorer, snapNetworkTimeProvider,
-                nugetServiceCommandPack, nugetServiceCommandPromote, nugetServiceCommandRestore, nugetServiceNoopLogger, distributedMutexClient,
+                nugetServiceCommandPack, nugetServiceCommandPromote, nugetServiceCommandDemote, nugetServiceCommandRestore, nugetServiceNoopLogger, distributedMutexClient,
                 toolWorkingDirectory, workingDirectory, cts.Token);
         }
 
@@ -185,15 +187,25 @@ namespace snapx
 
         static int MainAsync([NotNull] string[] args,
             [NotNull] CoreRunLib coreRunLib,
-            [NotNull] ISnapOs snapOs, [NotNull] ISnapExtractor snapExtractor,
-            [NotNull] ISnapFilesystem snapFilesystem, [NotNull] ISnapAppReader snapAppReader,
-            [NotNull] ISnapCryptoProvider snapCryptoProvider, [NotNull] ISnapPack snapPack,
-            [NotNull] ISnapAppWriter snapAppWriter, [NotNull] SnapxEmbeddedResources snapXEmbeddedResources, [NotNull] SnapPackageManager snapPackageManager,
+            [NotNull] ISnapOs snapOs,
+            [NotNull] ISnapExtractor snapExtractor,
+            [NotNull] ISnapFilesystem snapFilesystem,
+            [NotNull] ISnapAppReader snapAppReader,
+            [NotNull] ISnapCryptoProvider snapCryptoProvider, 
+            [NotNull] ISnapPack snapPack,
+            [NotNull] ISnapAppWriter snapAppWriter,
+            [NotNull] SnapxEmbeddedResources snapXEmbeddedResources, 
+            [NotNull] SnapPackageManager snapPackageManager,
             [NotNull] ISnapNetworkTimeProvider snapNetworkTimeProvider,
-            [NotNull] INugetService nugetServiceCommandPack, [NotNull] INugetService nugetServiceCommandPromote, INugetService nugetServiceCommandRestore,
+            [NotNull] INugetService nugetServiceCommandPack, 
+            [NotNull] INugetService nugetServiceCommandPromote, 
+            [NotNull] INugetService nugetServiceCommandDemote,
+            INugetService nugetServiceCommandRestore,
             [NotNull] INugetService nugetServiceNoopLogger,
             [NotNull] IDistributedMutexClient distributedMutexClient,
-            [NotNull] string toolWorkingDirectory, [NotNull] string workingDirectory, CancellationToken cancellationToken)
+            [NotNull] string toolWorkingDirectory, 
+            [NotNull] string workingDirectory, 
+            CancellationToken cancellationToken)
         {
             if (args == null) throw new ArgumentNullException(nameof(args));
             if (coreRunLib == null) throw new ArgumentNullException(nameof(coreRunLib));
@@ -208,6 +220,7 @@ namespace snapx
             if (snapPackageManager == null) throw new ArgumentNullException(nameof(snapPackageManager));
             if (snapNetworkTimeProvider == null) throw new ArgumentNullException(nameof(snapNetworkTimeProvider));
             if (nugetServiceCommandPromote == null) throw new ArgumentNullException(nameof(nugetServiceCommandPromote));
+            if (nugetServiceCommandDemote == null) throw new ArgumentNullException(nameof(nugetServiceCommandDemote));
             if (nugetServiceNoopLogger == null) throw new ArgumentNullException(nameof(nugetServiceNoopLogger));
             if (distributedMutexClient == null) throw new ArgumentNullException(nameof(distributedMutexClient));
             if (toolWorkingDirectory == null) throw new ArgumentNullException(nameof(toolWorkingDirectory));
@@ -215,10 +228,9 @@ namespace snapx
 
             if (args == null) throw new ArgumentNullException(nameof(args));
 
-
             return Parser
                 .Default
-                .ParseArguments<PromoteOptions, PackOptions, Sha256Options, RcEditOptions, ListOptions, RestoreOptions, LockOptions>(args)
+                .ParseArguments<PromoteOptions, PackOptions, DemoteOptions, Sha256Options, RcEditOptions, ListOptions, RestoreOptions, LockOptions>(args)
                 .MapResult(
                     (PromoteOptions opts) =>
                     {
@@ -228,6 +240,19 @@ namespace snapx
                             return -1;
                         }
                         return CommandPromoteAsync(opts, snapFilesystem, snapAppReader, snapAppWriter,
+                            nuGetPackageSources, nugetServiceCommandPromote, distributedMutexClient, snapPackageManager, snapPack,
+                            snapOs.SpecialFolders,
+                            snapNetworkTimeProvider, snapExtractor, snapOs, snapXEmbeddedResources, coreRunLib,
+                            SnapPromoteLogger, workingDirectory, cancellationToken).GetAwaiter().GetResult();
+                    },
+                    (DemoteOptions opts) =>
+                    {
+                        var nuGetPackageSources = BuildNuGetPackageSources(snapFilesystem, SnapPromoteLogger);
+                        if (nuGetPackageSources == null)
+                        {
+                            return -1;
+                        }
+                        return CommandDemoteAsync(opts, snapFilesystem, snapAppReader, snapAppWriter,
                             nuGetPackageSources, nugetServiceCommandPromote, distributedMutexClient, snapPackageManager, snapPack,
                             snapOs.SpecialFolders,
                             snapNetworkTimeProvider, snapExtractor, snapOs, snapXEmbeddedResources, coreRunLib,
